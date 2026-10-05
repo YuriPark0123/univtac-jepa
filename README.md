@@ -78,6 +78,52 @@ TRAIN_CONFIG=train_config_sparsh_ijepa EP_NUM=50 DATA_VERSION=isaac45 \
 - **경로:** encoder 체크포인트 경로를 실행 위치가 아니라 UniVTAC 루트 기준으로 해석합니다.
   기존 코드는 경로가 없으면 경고 없이 로딩을 건너뛰었습니다.
 
+## 학습 서버 ↔ 평가 서버
+
+학습과 평가를 다른 서버에서 합니다. 코드와 결과(작은 텍스트)는 git으로, 체크포인트(학습 1회당 약 383MB)는 공유 폴더(NAS 등)로 옮깁니다.
+
+```
+[학습 서버]  scripts/train_queue.sh → python scripts/record_runs.py → git add results/runs && git commit && git push
+             python scripts/ckpt_transfer.py export <공유폴더>
+[평가 서버]  git pull → python scripts/ckpt_transfer.py import <공유폴더>   (sha256이 results/runs 기록과 같아야 통과)
+             tmux에서 scripts/eval_queue.sh → python scripts/compare.py → git add results && git commit && git push
+```
+
+- **공유 폴더:** 컨테이너 안에 공유 폴더가 마운트되어 있지 않으면, `ckpt_transfer.py`를 호스트에서
+  `UNIVTAC_ROOT=<호스트의 UniVTAC 경로>`로 실행합니다.
+- **평가 큐:** `scripts/eval_queue.sh`는 `scripts/eval_queue.tsv`를 위에서부터 처리합니다.
+  - 한 항목의 100 seed를 `PROCS`개(기본 2) Isaac 프로세스로 나눠 `GPUS`(기본 `"0"`)에서 돌립니다. 프로세스 1개에 GPU 약 10GB가 필요합니다.
+  - 공개 체크포인트(`public_univtac`, `public_vision_only`)는 없으면 자동으로 받습니다.
+  - 중단돼도 다시 실행하면 남은 seed부터 이어서 합니다. **한 항목의 `PROCS`는 바꾸지 마세요**(바꾸면 `eval_run.py`가 거부합니다).
+  - 예: `PROCS=4 GPUS="0 1" bash scripts/eval_queue.sh`
+
+### 저장하는 것 (`results/`, git에 commit)
+
+| 경로 | 내용 | 만드는 곳 |
+|---|---|---|
+| `protocol.json` | 평가 조건 고정: seed 1000000–1000099, `demo`, isaac45, 데모 50개, 같은 seed 재시도 2회, 기준선 `original` | 고정 |
+| `runs/<task>/<train_config>.json` | 체크포인트·통계 파일 sha256, 학습 설정 전체, 사용한 원본 에피소드, repo commit, 학습 로그(시작·끝, 마지막 loss, val loss), 호스트 | 학습 서버 `record_runs.py` |
+| `evals/<task>/<method>/per_seed.shard<i>of<n>.csv` | seed, 결과(success/failed/error), step, action 수, 시간, **시도 횟수**, error 내용 | 평가 서버 `eval_run.py` |
+| `evals/<task>/<method>/eval.shard<i>of<n>.json` | 평가한 체크포인트 sha256, protocol sha256, repo·UniVTAC commit, Isaac 버전, 호스트, 시작 시 GPU 상태, 영상 위치 | 〃 |
+| `reference/<task>/public_*/per_seed.csv` | 공개 체크포인트에 딸린 평가 로그를 같은 형식으로 변환한 것 (참고값) | `make_reference.py` (완료) |
+| `tables/summary.md`, `summary.csv` | 비교표 | `compare.py` |
+
+영상과 시뮬레이터 로그는 무거워서 각 서버의 `<UniVTAC>/data/act_tacenc/eval_raw/`(로컬)에만 남습니다.
+
+### 비교 방법 (`scripts/compare.py`)
+
+- **유효성:** 다음 중 하나라도 어긋나면 표에 ❌와 이유가 표시되고 Δ·p 계산에서 빠집니다.
+  - protocol이 같은지, seed 100개가 모두 있고 중복이 없는지
+  - 재시도 후에도 error인 seed가 없는지
+  - shard 간 체크포인트가 같은지, 체크포인트 sha256이 `results/runs` 기록과 같은지
+- **지표 (task별):**
+  - 성공/n과 Wilson 95% 신뢰구간
+  - 기준선 `original`(같은 파이프라인 재학습) 대비 Δ와 exact McNemar p (같은 seed 짝 비교)
+  - 성공한 episode의 평균 action 수, 재시도한 seed 수
+  - 공개 체크포인트를 다시 평가한 경우: 공개 로그와 seed별 성공/실패 일치 수
+- **표 형식:** 행 = 방법, 열 = 위 지표 + 데이터 버전, 학습 step 수, encoder 고정 여부. 공개 로그 값은 "참고" 행으로 함께 보여 줍니다.
+- **결론:** task가 5개뿐이라 task별로 내립니다.
+
 ## 테스트
 
 ```bash

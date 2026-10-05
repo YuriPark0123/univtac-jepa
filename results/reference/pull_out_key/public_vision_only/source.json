@@ -1,0 +1,15 @@
+{
+  "source": "modelscope byml2024/UniVTAC checkpoints/pull_out_key/vision_only/log.log",
+  "eval_config": {
+    "policy_name": "ACT",
+    "seed": 0,
+    "ckpt_setting": 50,
+    "instruction_type": "seen",
+    "instuction_file": null,
+    "task_name": "pull_out_key",
+    "task_config": "demo",
+    "train_config": "train_config_vision"
+  },
+  "final_result": "39/100(39.00%) success.",
+  "episodes": 100
+}

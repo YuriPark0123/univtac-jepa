@@ -1,0 +1,44 @@
+# 평가 큐 — scripts/eval_queue.sh 가 위에서부터 순서대로 처리한다 (줄을 지우거나 순서를 바꿔도 된다)
+# 이미 100 seed 가 다 끝난 항목은 건너뛰고, 중간에 멈춘 항목은 남은 seed 부터 이어서 한다.
+# method: public_univtac | public_vision_only (공개 체크포인트) | original | sparsh_ijepa | ... (ACT_TacEnc, train_config_<method>.yml)
+# task	method
+grasp_classify	public_univtac
+grasp_classify	public_vision_only
+grasp_classify	original
+grasp_classify	sparsh_ijepa
+grasp_classify	sparsh_vjepa
+grasp_classify	sparsh_mae
+grasp_classify	sparsh_dino
+grasp_classify	resnet18_imagenet
+insert_hole	public_univtac
+insert_hole	public_vision_only
+insert_hole	original
+insert_hole	sparsh_ijepa
+insert_hole	sparsh_vjepa
+insert_hole	sparsh_mae
+insert_hole	sparsh_dino
+insert_hole	resnet18_imagenet
+pull_out_key	public_univtac
+pull_out_key	public_vision_only
+pull_out_key	original
+pull_out_key	sparsh_ijepa
+pull_out_key	sparsh_vjepa
+pull_out_key	sparsh_mae
+pull_out_key	sparsh_dino
+pull_out_key	resnet18_imagenet
+put_bottle_in_shelf	public_univtac
+put_bottle_in_shelf	public_vision_only
+put_bottle_in_shelf	original
+put_bottle_in_shelf	sparsh_ijepa
+put_bottle_in_shelf	sparsh_vjepa
+put_bottle_in_shelf	sparsh_mae
+put_bottle_in_shelf	sparsh_dino
+put_bottle_in_shelf	resnet18_imagenet
+lift_bottle	public_univtac
+lift_bottle	public_vision_only
+lift_bottle	original
+lift_bottle	sparsh_ijepa
+lift_bottle	sparsh_vjepa
+lift_bottle	sparsh_mae
+lift_bottle	sparsh_dino
+lift_bottle	resnet18_imagenet

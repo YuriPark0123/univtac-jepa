@@ -1,0 +1,15 @@
+{
+  "source": "modelscope byml2024/UniVTAC checkpoints/grasp_classify/vision_only/log.log",
+  "eval_config": {
+    "policy_name": "ACT",
+    "seed": 0,
+    "ckpt_setting": 50,
+    "instruction_type": "seen",
+    "instuction_file": null,
+    "task_name": "grasp_classify",
+    "task_config": "demo",
+    "train_config": "train_config_vision"
+  },
+  "final_result": "44/100(44.00%) success.",
+  "episodes": 100
+}
