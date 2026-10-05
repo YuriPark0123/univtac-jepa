@@ -81,6 +81,7 @@ def main(args):
         "real_robot": not is_sim,
         "save_freq": args['save_freq'],
         "num_steps": args['num_steps'],
+        "resume": args.get("resume", False),
     }
 
     # build_ACT_model_and_optimizer re-parses sys.argv unless num_epochs is present, which fails for train.sh
@@ -172,11 +173,14 @@ def train_bc(train_dataloader, val_dataloader, config):
     step_count = 0
     num_steps = config['num_steps']
     epoch = 0
-    
-    pbar = tqdm(range(num_steps), total=num_steps, leave=False)
+    if config.get("resume"):
+        step_count, epoch = resume_training(policy, optimizer, ckpt_dir, seed, config['save_freq'])
+
+    pbar = tqdm(range(num_steps), total=num_steps, initial=step_count, leave=False)
     while True:
         policy.train()
         optimizer.zero_grad()
+        epoch_start = len(train_history)
         for batch_idx, data in enumerate(train_dataloader):
             forward_dict = forward_pass(data, policy)
             # backward
@@ -196,9 +200,10 @@ def train_bc(train_dataloader, val_dataloader, config):
             if step_count % config['save_freq'] == 0:
                 ckpt_path = os.path.join(ckpt_dir, f"policy_epoch_{epoch + 1}_seed_{seed}.ckpt")
                 torch.save(policy.state_dict(), ckpt_path)
+                save_train_state(policy, optimizer, step_count, epoch, ckpt_dir)
                 plot_history(train_history, validation_history, epoch, ckpt_dir, seed)
 
-        epoch_summary = compute_dict_mean(train_history[(batch_idx + 1) * epoch:(batch_idx + 1) * (epoch + 1)])
+        epoch_summary = compute_dict_mean(train_history[epoch_start:])
         epoch_train_loss = epoch_summary["loss"]
 
         train_summary_string = ""
@@ -231,6 +236,9 @@ def train_bc(train_dataloader, val_dataloader, config):
     ckpt_path = os.path.join(ckpt_dir, f"policy_last.ckpt")
     torch.save(policy.state_dict(), ckpt_path)
 
+    if best_ckpt_info is None:  # resumed at/after num_steps: nothing was trained or validated in this process
+        print(f"Training finished at step {step_count} (no new validation after resume)")
+        return (epoch, np.inf, deepcopy(policy.state_dict()))
     best_epoch, min_val_loss, best_state_dict = best_ckpt_info
     ckpt_path = os.path.join(ckpt_dir, f"policy_epoch_{best_epoch}_seed_{seed}.ckpt")
     torch.save(best_state_dict, ckpt_path)
@@ -240,6 +248,41 @@ def train_bc(train_dataloader, val_dataloader, config):
     plot_history(train_history, validation_history, epoch, ckpt_dir, seed)
 
     return best_ckpt_info
+
+
+def save_train_state(policy, optimizer, step_count, epoch, ckpt_dir):
+    """Full training state for exact resume (weights + optimizer + counters), overwritten every save_freq steps."""
+    path = os.path.join(ckpt_dir, "train_state.pt")
+    torch.save({"model": policy.state_dict(), "optimizer": optimizer.state_dict(),
+                "step": step_count, "epoch": epoch}, path + ".tmp")
+    os.replace(path + ".tmp", path)
+
+
+def resume_training(policy, optimizer, ckpt_dir, seed, save_freq):
+    """
+    Continue an interrupted run in ckpt_dir. Returns (step_count, epoch).
+      train_state.pt          -> exact: weights, optimizer state, step, epoch
+      policy_epoch_*_seed_*   -> weights only (older runs): step = save_freq * number of such files, optimizer restarts
+    """
+    import glob, re
+    state_path = os.path.join(ckpt_dir, "train_state.pt")
+    if os.path.exists(state_path):
+        state = torch.load(state_path, map_location="cuda")
+        policy.load_state_dict(state["model"])
+        optimizer.load_state_dict(state["optimizer"])
+        print(f"[resume] train_state.pt: step {state['step']}, epoch {state['epoch']} (weights + optimizer)")
+        return state["step"], state["epoch"] + 1
+    ckpts = glob.glob(os.path.join(ckpt_dir, f"policy_epoch_*_seed_{seed}.ckpt"))
+    if not ckpts:
+        print("[resume] no checkpoint in ckpt_dir -> training from scratch")
+        return 0, 0
+    epoch_of = lambda p: int(re.search(r"policy_epoch_(\d+)_seed_", os.path.basename(p)).group(1))
+    latest = max(ckpts, key=epoch_of)
+    policy.load_state_dict(torch.load(latest))
+    step = save_freq * len(ckpts)  # these files are written exactly every save_freq steps
+    print(f"[resume] {os.path.basename(latest)}: step {step}, epoch {epoch_of(latest)} "
+          f"(weights only — optimizer state was not saved by this run and restarts)")
+    return step, epoch_of(latest)
 
 
 def plot_history(train_history, validation_history, num_epochs, ckpt_dir, seed):
@@ -275,6 +318,7 @@ if __name__ == "__main__":
     parser.add_argument("--task_name", action="store", type=str, help="task_name", required=True)
     parser.add_argument("--config_path", action="store", type=str, help="config_path", required=True)
     parser.add_argument("--seed", action="store", type=int, help="seed", required=True)
+    parser.add_argument("--resume", action="store_true", help="continue from the checkpoints in ckpt_dir")
 
     args = parser.parse_args()
     with open(args.config_path, 'r') as f:

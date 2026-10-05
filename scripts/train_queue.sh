@@ -7,7 +7,11 @@
 #   (빠져나오기: Ctrl-b d,  다시 붙기: tmux attach -t train,  중단: Ctrl-c — 진행 중 학습도 같이 종료)
 #
 # 규칙 (단순하게):
-#   - 시작할 때 체크포인트 폴더가 이미 있는 항목은 건너뛴다 (끝났거나 다른 곳에서 학습 중). 다시 하려면 그 폴더를 지운다.
+#   - 시작할 때 항목별로 판단한다:
+#       policy_last.ckpt 있음            → 끝남, 건너뜀 (다시 하려면 그 폴더를 지운다)
+#       같은 폴더로 학습 중인 프로세스 있음 → 건너뜀
+#       폴더는 있는데 policy_last.ckpt 없음 → 중단된 학습: 마지막 체크포인트에서 이어서 (RESUME=1)
+#       폴더 없음                          → 처음부터
 #   - 동시에 최대 MAX_JOBS(2)개. 하나 띄울 때마다 그 순간 여유 메모리가 가장 큰 GPU 를 고른다.
 #   - CUDA out of memory 로 실패하면 큐 맨 뒤로 보내 나중에 다시 한다 (최대 OOM_RETRY(2)회). 다른 실패는 기록만 한다.
 #   - 데이터가 없으면 학습 전에 다운로드(data/download.sh)·전처리(process_data.py)를 한다.
@@ -47,11 +51,14 @@ freest_gpu() {  # 여유 메모리가 가장 큰 GPU 번호
     nvidia-smi --query-gpu=index,memory.free --format=csv,noheader,nounits | sort -t, -k2 -n -r | head -1 | cut -d, -f1
 }
 
-# 큐 만들기: 체크포인트 폴더가 이미 있는 항목은 제외
+# 큐 만들기
 QUEUE=()
 while IFS=$'\t' read -r task cfg _; do
     [[ -z "${task}" || "${task}" == \#* ]] && continue
-    if [[ -d "$(ckpt_of "${task}" "${cfg}")" ]]; then log "건너뜀 (폴더 있음): ${task} ${cfg}"; continue; fi
+    ckpt="$(ckpt_of "${task}" "${cfg}")"
+    if [[ -f "${ckpt}/policy_last.ckpt" ]]; then log "건너뜀 (끝남): ${task} ${cfg}"; continue; fi
+    if pgrep -f -- "--ckpt_dir ${ckpt} " >/dev/null; then log "건너뜀 (학습 중): ${task} ${cfg}"; continue; fi
+    [[ -d "${ckpt}" ]] && log "이어서 학습 예정 (중단된 폴더): ${task} ${cfg}"
     QUEUE+=("${task} ${cfg}")
 done < "${QUEUE_FILE}"
 log "큐 시작: ${#QUEUE[@]}개, 동시 ${MAX_JOBS}개, data=${DATA_VERSION}-${EP_NUM}, repo=$(git -C "${JEPA_ROOT}" rev-parse --short HEAD)"
@@ -86,7 +93,9 @@ while (( ${#QUEUE[@]} > 0 || ${#JOB_ITEM[@]} > 0 )); do
         tlog="${LOGD}/${task}_${cfg}_seed0_$(date +%Y%m%d-%H%M%S).log"
         (
             echo "repo=univtac-jepa@$(git -C "${JEPA_ROOT}" rev-parse --short HEAD) task=${task} data=${DATA_VERSION}-${EP_NUM} cfg=${cfg} seed=0 gpu=${gpu} start=$(date '+%F %T')"
-            bash "${POL}/train.sh" "${task}" "${DATA_VERSION}" "${EP_NUM}" 0 "${gpu}" "${cfg}"
+            # 폴더가 이미 있으면(중단됐거나 OOM 재시도) 마지막 체크포인트에서 이어서
+            RESUME=$([[ -d "$(ckpt_of "${task}" "${cfg}")" ]] && echo 1 || echo 0) \
+                bash "${POL}/train.sh" "${task}" "${DATA_VERSION}" "${EP_NUM}" 0 "${gpu}" "${cfg}"
             rc=$?; echo "exit=${rc} end=$(date '+%F %T')"; exit ${rc}
         ) > "${tlog}" 2>&1 < /dev/null &
         JOB_ITEM[$!]="${task} ${cfg}"; JOB_LOG[$!]="${tlog}"; JOB_GPU[$!]="${gpu}"
