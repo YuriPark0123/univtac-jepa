@@ -1,0 +1,9 @@
+# Pinned sources for univtac-jepa. Sourced by setup_host.sh and scripts/univtac_install_jepa.sh.
+# Isaac Sim / Isaac Lab / cuRobo / vcpkg pins of the base UniVTAC environment live in
+# docker/scripts/univtac_install_main.sh (Isaac Sim 4.5.0, Isaac Lab v2.1.1, cuRobo 0a50de1, vcpkg dd3097e).
+UNIVTAC_REPO=https://github.com/univtac/UniVTAC.git
+UNIVTAC_COMMIT=0dafa10262e22f486f160a55d6f11aeab12d8e7b
+SPARSH_REPO=https://github.com/facebookresearch/sparsh.git
+SPARSH_COMMIT=fee6a05a97330eca014b59c71ac41596fe3974a7
+UNIVTAC_BASE_ENV=UniVTAC
+UNIVTAC_JEPA_ENV=UniVTAC-jepa

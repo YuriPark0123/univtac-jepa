@@ -1,0 +1,18 @@
+# code only — heavy files live on each server's local disk (<UniVTAC>/data, conda env)
+__pycache__/
+*.pyc
+*.log
+.vscode/
+**/act_ckpt/
+**/data/
+SIM_TASK_CONFIGS.json
+*.ckpt
+*.pth
+*.pkl
+*.safetensors
+*.hdf5
+*.mp4
+*.png
+# secrets that the docker scripts may read from their own folder
+tailscale.authkey
+*.authkey

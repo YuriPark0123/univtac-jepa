@@ -1,0 +1,127 @@
+# =============================================================================
+# UniVTAC (main 브랜치 = 논문 환경: Isaac Sim 4.5.0 / Isaac Lab 2.1.1 / TacEx) 벤치마크용 이미지
+#   + TigerVNC/XFCE 데스크탑 + Tailscale  (기존 isaaclab:vnc 와 같은 편의 기능)
+#
+# 빌드:  cd <이 파일이 있는 폴더> && docker build -f Dockerfile.univtac -t univtac:isaac45 .
+# 실행:  bash run_container_univtac.sh
+#
+# 설계 (IsaacLab/UniVTAC_INSTALL_NOTES.md §3, §5 기준):
+#   ● 베이스는 nvidia/cuda 12.4.1 + Ubuntu 22.04 (TacEx 검증 환경: 22.04 / driver 550 / CUDA 12.4).
+#     이 서버에 이미 있는 태그(12.4.1-cudnn-devel)를 써서 pull 을 피한다.
+#   ● Isaac Sim 은 베이스에 넣지 않는다 — /usr/local/bin/univtac_install_main.sh 가 conda env 'UniVTAC'
+#     (python 3.10) 안에 pip 으로 설치한다. 원본 scripts/install.sh 는 노트 §5 의 버그(vcpkg 조건 반전,
+#     sudo, livestream 테스트, 존재하지 않는 conda gcc=11.4)가 있어 쓰지 않고, 수동 절차를 스크립트화했다.
+#   ● Miniconda 는 이미지에 굽고, envs/ pkgs/ 만 서버 로컬($HOME/.isaaclab_vnc/univtac)에 마운트
+#     → 컨테이너를 지워도 UniVTAC env(15~25GB)는 남는다.
+#   ● UniVTAC 리포는 "로컬 디스크" 에 clone 해서 /workspace/UniVTAC 로 마운트한다.
+#     (NAS/CIFS 는 심볼릭 링크 불가 → vcpkg/libuipc 빌드 불가. 노트 §0, §3.1)
+# =============================================================================
+FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8
+
+# 1) OS 패키지
+#    - 빌드 도구: UniVTAC docs/Installation.md (cmake build-essential git-lfs) + vcpkg 요구(curl zip unzip tar pkg-config)
+#      * cmake 는 apt(3.22) 가 아니라 conda(3.26) 것을 쓴다 (libuipc: cmake_minimum_required 3.26) → apt cmake 설치 안 함
+#      * gcc/g++ 는 Ubuntu 22.04 시스템 것 = 11.4.0 — TacEx 가 요구하는 "GCC 11.4" 그대로
+#    - Isaac Sim(pip) 런타임 라이브러리: nvcr.io/nvidia/isaac-lab 이미지의 dpkg 목록과 대조해 맞춤
+#    - autoconf/automake/libtool: libuipc 의 vcpkg 포트(tbb, cpptrace, urdfdom 등) 빌드 안전장치
+#    - VNC + XFCE + 유틸: 기존 Dockerfile(isaaclab:vnc) 과 동일
+#    - tmux/ffmpeg: 기존 container_setup.sh 가 매번 설치하던 것을 이미지에 포함
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential curl ca-certificates git git-lfs pkg-config unzip zip tar wget \
+        autoconf automake libtool \
+        tmux ffmpeg vim less htop tzdata \
+        libatomic1 libegl1 libgl1 libgles2 libglx0 libglu1-mesa libglvnd0 libgomp1 \
+        libsm6 libice6 libxi6 libxrandr2 libxt6 libxext6 libxrender1 libxfixes3 \
+        libxcursor1 libxinerama1 libxcomposite1 libxdamage1 libxtst6 libxss1 libxxf86vm1 \
+        libxkbcommon0 libxkbcommon-x11-0 libx11-xcb1 xauth \
+        libfreetype6 libfontconfig1 libnss3 libasound2 libglib2.0-0 libgtk-3-0 \
+        libvulkan1 vulkan-tools libssl3 openssl \
+        tigervnc-standalone-server tigervnc-common tigervnc-tools \
+        dbus-x11 xfce4 xfce4-terminal x11-xserver-utils mesa-utils \
+        net-tools iptables \
+    && rm -rf /var/lib/apt/lists/* \
+    && gcc --version | head -1
+
+# 1-b) Vulkan ICD 파일 — RTX 렌더러가 NVIDIA Vulkan 드라이버를 찾는 경로.
+#    nvcr.io/nvidia/isaac-lab 이미지에는 이 파일이 구워져 있고(툴킷 주입 아님), libGLX_nvidia.so.0 자체는
+#    nvidia-container-toolkit 이 런타임에 넣어준다. 없으면 Isaac Sim 이 GPU 렌더를 못 잡는다.
+RUN mkdir -p /etc/vulkan/icd.d && printf '%s\n' \
+        '{' \
+        '    "file_format_version" : "1.0.0",' \
+        '    "ICD" : {' \
+        '        "library_path" : "libGLX_nvidia.so.0",' \
+        '        "api_version" : "1.3.194"' \
+        '    }' \
+        '}' > /etc/vulkan/icd.d/nvidia_icd.json
+
+# 1-c) GLVND EGL vendor 설정 — ★ 이게 없으면 Vulkan 이 GPU 를 전혀 못 잡는다.
+#    증상: vulkaninfo → "Could not get 'vkCreateInstance' via 'vk_icdGetInstanceProcAddr' for ICD libGLX_nvidia.so.0"
+#    원인: 헤드리스에서 NVIDIA Vulkan 드라이버는 EGL 로 디바이스를 찾는데, GLVND 가 vendor 목록에 mesa(50_mesa.json)만
+#          보게 되어 NVIDIA EGL 디바이스를 못 찾고 초기화를 포기한다. (2026-09-18 이 서버에서 재현·수정 확인)
+#    isaac-lab 공식 이미지에는 이 파일이 구워져 있고, nvidia-container-toolkit 은 주입하지 않는다.
+RUN mkdir -p /usr/share/glvnd/egl_vendor.d && printf '%s\n' \
+        '{' \
+        '    "file_format_version" : "1.0.0",' \
+        '    "ICD" : {' \
+        '        "library_path" : "libEGL_nvidia.so.0"' \
+        '    }' \
+        '}' > /usr/share/glvnd/egl_vendor.d/10_nvidia.json
+
+# 2) Tailscale (VPN) — 기존 이미지와 동일. 자동 시작은 TS_ENABLE=1 일 때만 (entrypoint 참고)
+RUN curl -fsSL https://tailscale.com/install.sh | sh
+
+# 3) Miniconda → /root/miniconda3  (기존 컨테이너와 같은 경로)
+#    - 설치 스크립트가 https://repo.anaconda.com/pkgs/main 채널(python 3.10, cmake 3.26, cuda-toolkit 12.4)을
+#      명시적으로 쓰므로 Anaconda ToS 를 빌드 시점에 수락해 둔다 (+ 런타임 자동수락 env).
+#    - envs/ 와 pkgs/ 는 런타임에 서버 로컬 디렉토리로 덮어씌운다 (run_container_univtac.sh).
+#    - 버전을 고정하려면: --build-arg MINICONDA_INSTALLER=Miniconda3-py311_XX.X.X-X-Linux-x86_64.sh
+ARG MINICONDA_INSTALLER=Miniconda3-latest-Linux-x86_64.sh
+ENV CONDA_DIR=/root/miniconda3 \
+    PATH=/root/miniconda3/condabin:$PATH \
+    CONDA_PLUGINS_AUTO_ACCEPT_TOS=yes
+RUN wget -q "https://repo.anaconda.com/miniconda/${MINICONDA_INSTALLER}" -O /tmp/miniconda.sh \
+    && bash /tmp/miniconda.sh -b -p "${CONDA_DIR}" \
+    && rm -f /tmp/miniconda.sh \
+    && "${CONDA_DIR}/bin/conda" init bash \
+    && "${CONDA_DIR}/bin/conda" config --set auto_activate_base false \
+    && ( "${CONDA_DIR}/bin/conda" tos accept --override-channels \
+           --channel https://repo.anaconda.com/pkgs/main \
+           --channel https://repo.anaconda.com/pkgs/r || true ) \
+    && "${CONDA_DIR}/bin/conda" clean -afy \
+    && "${CONDA_DIR}/bin/conda" --version
+
+# 4) 설치 / VNC / tailscale / entrypoint 스크립트
+COPY scripts/univtac_install_main.sh /usr/local/bin/univtac_install_main.sh
+COPY scripts/univtac_link_checkpoints.sh /usr/local/bin/univtac_link_checkpoints.sh
+COPY scripts/univtac_start_vnc.sh    /usr/local/bin/start_vnc.sh
+COPY scripts/univtac_stop_vnc.sh     /usr/local/bin/stop_vnc.sh
+COPY scripts/start_tailscale.sh      /usr/local/bin/start_tailscale.sh
+COPY scripts/univtac_entrypoint.sh   /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/univtac_install_main.sh /usr/local/bin/univtac_link_checkpoints.sh /usr/local/bin/start_vnc.sh /usr/local/bin/stop_vnc.sh \
+             /usr/local/bin/start_tailscale.sh /usr/local/bin/entrypoint.sh
+
+# 5) 기본 환경변수
+#    - DISPLAY=:1 / 포트 5901 : 기존 isaaclab 컨테이너와 동일 (같은 host 에서 둘 다 VNC 를 켜면 충돌 → VNC_DISPLAY=2 로 실행)
+#    - OMNI_KIT_ACCEPT_EULA : Isaac Sim(pip) 첫 실행 EULA 를 비대화형으로 수락
+#    - OMNI_KIT_ALLOW_ROOT   : 컨테이너는 root 로 도므로 Kit 의 root 실행 차단을 해제 (프로젝트 스펙 문서와 동일)
+#    - VK_DRIVER_FILES      : 위 1-b 에서 만든 ICD 파일을 고정 (isaac-lab 이미지와 동일 값)
+ENV DISPLAY=:1 \
+    VNC_DISPLAY=1 \
+    VNC_PASSWORD=isaaclab \
+    OMNI_KIT_ACCEPT_EULA=YES \
+    OMNI_KIT_ALLOW_ROOT=1 \
+    ACCEPT_EULA=Y \
+    PRIVACY_CONSENT=Y \
+    VK_DRIVER_FILES=/etc/vulkan/icd.d/nvidia_icd.json \
+    UNIVTAC_ROOT=/workspace/UniVTAC \
+    UNIVTAC_CONDA_ENV=UniVTAC \
+    UNIVTAC_VCPKG_ROOT=/root/Toolchain/vcpkg
+
+WORKDIR /workspace/UniVTAC
+EXPOSE 5901
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["/bin/bash"]

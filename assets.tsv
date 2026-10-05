@@ -1,0 +1,9 @@
+# Large files downloaded to the local disk by scripts/univtac_install_jepa.sh (never committed).
+# path (under <UniVTAC>/data)	sha256	source	repo	file
+sparsh/mae_vitbase.safetensors	217053e6d84373fbd8ed255e73cd9713b3780fb2e9a5ad6e1f22f8b1cd1ec79b	hf	facebook/sparsh-mae-base	mae_vitbase.safetensors
+sparsh/dino_vitbase.safetensors	169262848300790daeba9f380d04c4873ec37ca25b034bb8db35e1c28cb6f956	hf	facebook/sparsh-dino-base	dino_vitbase.safetensors
+sparsh/ijepa_vitbase.safetensors	996ca86346ae7aabc275ad9bee1250172be72141302d30822f9a11a20a89bdae	hf	facebook/sparsh-ijepa-base	ijepa_vitbase.safetensors
+sparsh/vjepa_vitbase.safetensors	5507e71a55e83ab8d0d4e2b00dec0832f7d6831d191e67af9b43825de016e567	hf	facebook/sparsh-vjepa-base	vjepa_vitbase.safetensors
+checkpoints/encoder.pth	28097c91a1a1d051f65266fc7fdd84420dc184da9dcfc2006aa40af144cf15bf	modelscope	byml2024/UniVTAC	checkpoints/encoder.pth
+isaac45/grasp_classify/hdf5/0.hdf5	d5e87530acbca57325ef637cf5e0efed0f3026acab59981df6d2f807352333f7	modelscope	byml2024/UniVTAC	isaac45/grasp_classify/hdf5/0.hdf5
+isaac45/grasp_classify/hdf5/1.hdf5	923f0be0e05e82a6e818630f79e74c503e83d437ceeebba4ea032683c65331f2	modelscope	byml2024/UniVTAC	isaac45/grasp_classify/hdf5/1.hdf5

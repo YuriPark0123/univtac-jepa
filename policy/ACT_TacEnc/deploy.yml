@@ -1,0 +1,11 @@
+# Basic experiment configuration
+policy_name: ACT_TacEnc
+seed: 0
+ckpt_setting: 50
+instruction_type: seen
+instuction_file: null
+# training data version of the checkpoint; must match the simulator used for evaluation (override: DATA_VERSION)
+data_version: isaac45
+# policy calls per recorded data frame: data is saved every 2 sim steps (task_config save_frequency: 2),
+# evaluation calls the policy once per sim step (BaseTask.take_action -> one _step)
+eval_steps_per_data_frame: 2

@@ -1,0 +1,4 @@
+# docker build 컨텍스트를 scripts/ 만으로 제한한다.
+# Dockerfile.univtac 은 scripts/ 안의 파일만 COPY 한다.
+*
+!scripts
