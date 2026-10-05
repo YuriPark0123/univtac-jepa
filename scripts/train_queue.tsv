@@ -1,0 +1,33 @@
+# ACT_TacEnc 학습 큐 — scripts/train_queue.sh 가 위에서부터 순서대로 처리한다 (줄을 지우거나 순서를 바꿔도 된다)
+# 이미 끝난 항목(policy_last.ckpt 있음)과 다른 곳에서 학습 중인 항목은 건너뛴다.
+# task	train_config        (학습 seed 는 0 고정 — 체크포인트 경로에 seed 가 없어 seed 별 결과가 서로 덮어쓰기 때문)
+grasp_classify	train_config_original
+grasp_classify	train_config_sparsh_ijepa
+grasp_classify	train_config_sparsh_vjepa
+grasp_classify	train_config_sparsh_mae
+grasp_classify	train_config_sparsh_dino
+grasp_classify	train_config_resnet18_imagenet
+insert_hole	train_config_original
+insert_hole	train_config_sparsh_ijepa
+insert_hole	train_config_sparsh_vjepa
+insert_hole	train_config_sparsh_mae
+insert_hole	train_config_sparsh_dino
+insert_hole	train_config_resnet18_imagenet
+pull_out_key	train_config_original
+pull_out_key	train_config_sparsh_ijepa
+pull_out_key	train_config_sparsh_vjepa
+pull_out_key	train_config_sparsh_mae
+pull_out_key	train_config_sparsh_dino
+pull_out_key	train_config_resnet18_imagenet
+put_bottle_in_shelf	train_config_original
+put_bottle_in_shelf	train_config_sparsh_ijepa
+put_bottle_in_shelf	train_config_sparsh_vjepa
+put_bottle_in_shelf	train_config_sparsh_mae
+put_bottle_in_shelf	train_config_sparsh_dino
+put_bottle_in_shelf	train_config_resnet18_imagenet
+lift_bottle	train_config_original
+lift_bottle	train_config_sparsh_ijepa
+lift_bottle	train_config_sparsh_vjepa
+lift_bottle	train_config_sparsh_mae
+lift_bottle	train_config_sparsh_dino
+lift_bottle	train_config_resnet18_imagenet
